@@ -1,0 +1,15 @@
+<seelog type="asynctimer" asyncinterval="5000000" minlevel="debug" maxlevel="error">
+    <outputs formatid="main">
+        <console/>
+
+        <rollingfile  type="size" filename="./log/server.log" maxsize="100" maxrolls="5" />
+
+        <filter levels="error">
+            <file path="./log/error.log"/>
+        </filter>
+
+    </outputs>
+    <formats>
+        <format id="main" format="%Date(2006 Jan 02/3:04:05.000000000 PM MST) [%Level] %Msg%n"/>
+    </formats>
+</seelog>
