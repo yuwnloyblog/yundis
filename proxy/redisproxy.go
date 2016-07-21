@@ -9,15 +9,13 @@ import(
 )
 
 type RedisProxy struct{
-	Host string
-	Port int
 	TargetHost string
 	TargetPort int
 	redisConn net.Conn
 	redisBw *bufio.Writer
 	redisBr *bufio.Reader 
 }
-
+/*
 func (self *RedisProxy)Start()error{
 	listen,err := net.ListenTCP("tcp", &net.TCPAddr{net.ParseIP(self.Host), self.Port, ""})  
     if err != nil {
@@ -27,10 +25,11 @@ func (self *RedisProxy)Start()error{
     fmt.Println("Inited the connection, waitting for client...")
     self.process(listen)
 	return nil;
-}
+}*/
 /**
  * listening the tcp connection.
  */
+/*
 func (self *RedisProxy)process(listen *net.TCPListener){
 	for{
 		conn, err := listen.Accept()
@@ -56,19 +55,21 @@ func (self *RedisProxy)process(listen *net.TCPListener){
 				}
 				fmt.Println(redisCmd)
 				//send to redis
-				self.sendToRedis(data[0:i],conn)
+				self.SendToRedis(data[0:i],conn)
 			}
 		}()
 	}
 }
+*/
 /**
  * send data to redis
  */
-func (self *RedisProxy)sendToRedis(data []byte, conn net.Conn){
+func (self *RedisProxy)SendToRedis(data []byte, conn net.Conn){
 	if self.redisConn == nil{
 		rc,err := net.Dial("tcp",strings.Join([]string{self.TargetHost,strconv.Itoa(self.TargetPort)},":"))
 		if err != nil{
 			fmt.Println("connect redis error:", err.Error())
+			return
 		}else{
 			bw := bufio.NewWriter(rc)
 			br := bufio.NewReader(rc)

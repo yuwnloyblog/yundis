@@ -1,27 +1,30 @@
 package server
 import(
-	"fmt"
 	"time"
 	"strings"
 	"strconv"
+	"net"
+	"github.com/yuwnloyblog/yundis/proxy"
 	"github.com/samuel/go-zookeeper/zk"
 	_"github.com/yuwnloyblog/yundis/logs"
 	"github.com/yuwnloyblog/yundis/utils"
+	commonutils "github.com/yuwnloyblog/go-commons-tool/utils"
 	log "github.com/cihub/seelog"
 )
-const(
-	NodeId = 0
-	NodeName = "node0"
-	RedisHost = "127.0.0.1"
-	RedisPort = 6379
-)
+
 type YundisServer struct{
 	Id int
 	Name string
+	Host string
+	Port int
+	RedisHost string
+	RedisPort int
+	ZkAddress []string
 	zkConn *zk.Conn
 	slots *SlotAllocation
+	//nodeInfoMap map[string]*NodeInfo
+	slotHashRing *commonutils.ConsistentHash
 }
-
 func (self *YundisServer)Start(){
 	log.Info("Begin to register itself to zookeeper.")
 	self.registerToZk()
@@ -30,7 +33,73 @@ func (self *YundisServer)Start(){
 		log.Error("Error when handle allocations node.")
 		log.Error(err)
 	}
-	log.Info("Start the yundis server ["+self.Name+"]")
+	//load the nodeInfo map
+	LoadNodeInfoMap(self.getZkConn())
+	// initial the hash ring
+	self.initialSlotHashRing()
+	// start the agent to wait client connect.
+	self.StartAgent()
+	//log.Info("Start the yundis server ["+self.Name+"]")
+}
+/**
+ * initial the hash ring for slots
+ */
+func (self *YundisServer)initialSlotHashRing(){
+	cHashRing := commonutils.NewConsistentHash(false)
+	for i := 0; i < slotCount; i++ {
+		cHashRing.Add("slot"+strconv.Itoa(i), i, 1)
+	}
+	cHashRing.Prepare()
+	self.slotHashRing = cHashRing
+}
+
+func (self *YundisServer)StartAgent(){
+	listen,err := net.ListenTCP("tcp", &net.TCPAddr{net.ParseIP(self.Host), self.Port, ""})  
+    if err != nil {
+    	log.Errorf("Error when start the agent, err:%s", err) 
+        return
+    }
+    log.Info("Inited the connection, waitting for client...")
+    for{
+		conn, err := listen.Accept()
+		if err != nil {
+			log.Errorf("error when accept the connect from client:%s", err.Error())
+			continue
+		}
+		log.Infof("client connected from:%s", conn.RemoteAddr().String())
+		go func(){
+			data := make([]byte, 8192)
+			defer conn.Close()
+			for {
+				i,err := conn.Read(data)
+				if err != nil{
+					log.Warnf("error when read data from client:%s", err.Error())
+					break
+				}
+				redisCmd,err := proxy.ParseRedisCmd(string(data[0:i]))
+				if err!= nil{
+					log.Errorf("Error when parse the redis cmd from client:%s",string(data[0:i]))
+					break
+				}
+				log.Infof("cmd: %s",redisCmd)
+				//send to redis
+				hashNode := self.slotHashRing.Get(redisCmd.Key)
+				slotId := hashNode.Entry.(int)
+				log.Debugf("Target slot is %d", slotId)
+				if nodeId,ok := self.slots.Allocations[strconv.Itoa(slotId)];ok{
+					log.Debugf("Target node is %d", nodeId)
+					if nodeInfo,ok:=nodeInfoMap[strconv.Itoa(nodeId)];ok{
+						nodeInfo.GetRedisProxy().SendToRedis(data[0:i],conn)
+					}else{
+						log.Errorf("Can not find the nodeinfo by nodeId %d", nodeId)
+					}
+				}else{
+					log.Errorf("Can not get the nodeId by slotId %d",slotId)
+					break
+				}
+			}
+		}()
+	}
 }
 
 /**
@@ -77,19 +146,19 @@ func (self *YundisServer)registerToZk(){
 	self.recCreatePathNx("/yundis/ids")
 	//register itself to zk
 	nodeinfo := NodeInfo{
-					Id : NodeId,
-					Name : NodeName,
-					Host : RedisHost,
-					Port : RedisPort,
+					Id : self.Id,
+					Name : self.Name,
+					Host : self.RedisHost,
+					Port : self.RedisPort,
 			}
 	jsonStr,err:=utils.ToJson(nodeinfo)
 	if err != nil {
-		fmt.Println("Convert to json string error:",err)
+		log.Errorf("Convert to json string error:%s",err)
 		panic(err)
 	}
 	_,err = self.coverCreate("/yundis/ids/"+strconv.Itoa(self.Id), []byte(jsonStr), zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 	if err != nil {
-		fmt.Println("register node error:",err)
+		log.Errorf("register node error:%s",err)
 		panic(err)
 	}
 }
@@ -111,7 +180,7 @@ func (self *YundisServer)coverCreate(path string, bytes []byte, flags int32, acl
 func (self *YundisServer)pathExist(path string)bool{
 	b,_,err := self.getZkConn().Exists(path)
 	if err != nil{
-		fmt.Println(err)
+		log.Error(err)
 		return false
 	}
 	return b
@@ -128,10 +197,10 @@ func (self *YundisServer)recCreatePathNx(path string){
 			if !isExist {//that path have not been created.
 				_,err:=self.getZkConn().Create(childPath,[]byte{},0,zk.WorldACL(zk.PermAll))
 				if err != nil {
-					fmt.Println("create path '"+childPath+"' error!")
+					log.Errorf("can not create path %s, err: %s", childPath, err)
 					break
 				}else{
-					fmt.Println("success to create the path '"+childPath+"'")
+					log.Infof("success to create the path %s", childPath)
 				}
 			}
 		}
@@ -140,11 +209,13 @@ func (self *YundisServer)recCreatePathNx(path string){
 
 func (self *YundisServer)getZkConn()*zk.Conn{
 	if self.zkConn == nil {
-		c, _, err := zk.Connect([]string{"127.0.0.1:2181"}, 10*time.Second)
+		c, _, err := zk.Connect(self.ZkAddress, 10*time.Second)
 		if err != nil {
-			fmt.Println("connect zk error:",err)
+			log.Errorf("connect zk error:",err)
+		}else{
+			log.Info("Success to connect zk.")
+			self.zkConn = c
 		}
-		self.zkConn = c
 	}
 	return self.zkConn
 }
