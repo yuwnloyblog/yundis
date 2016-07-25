@@ -6,23 +6,21 @@ import(
 	"net"
 	"github.com/yuwnloyblog/yundis/proxy"
 	"github.com/samuel/go-zookeeper/zk"
-	_"github.com/yuwnloyblog/yundis/logs"
 	"github.com/yuwnloyblog/yundis/utils"
 	commonutils "github.com/yuwnloyblog/go-commons-tool/utils"
 	log "github.com/cihub/seelog"
 )
 
 type YundisServer struct{
-	Id int
-	Name string
-	Host string
-	Port int
-	RedisHost string
-	RedisPort int
-	ZkAddress []string
+	Id int         //server id
+	//Name string    //server name
+	Host string    //server's host
+	Port int       //server's listen port
+	RedisHost string  //its redis host
+	RedisPort int     //its redis port
+	ZkAddress []string // zookeeper's connect string
 	zkConn *zk.Conn
 	slots *SlotAllocation
-	//nodeInfoMap map[string]*NodeInfo
 	slotHashRing *commonutils.ConsistentHash
 }
 func (self *YundisServer)Start(){
@@ -30,8 +28,7 @@ func (self *YundisServer)Start(){
 	self.registerToZk()
 	err:=self.handleSlotAllocations()
 	if err != nil{
-		log.Error("Error when handle allocations node.")
-		log.Error(err)
+		log.Errorf("Error when handle allocations node. %s", err)
 	}
 	//load the nodeInfo map
 	LoadNodeInfoMap(self.getZkConn())
@@ -147,7 +144,7 @@ func (self *YundisServer)registerToZk(){
 	//register itself to zk
 	nodeinfo := NodeInfo{
 					Id : self.Id,
-					Name : self.Name,
+					//Name : self.Name,
 					Host : self.RedisHost,
 					Port : self.RedisPort,
 			}

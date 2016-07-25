@@ -10,7 +10,7 @@ import(
 
 type NodeInfo struct{
 	Id int
-	Name string
+	//Name string
 	Host string
 	Port int
 	redisProxy *proxy.RedisProxy
