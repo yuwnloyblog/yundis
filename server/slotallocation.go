@@ -6,10 +6,6 @@ import(
 	"github.com/yuwnloyblog/yundis/utils"
 )
 
-const(
-	slotCount = 8
-)
-
 type SlotAllocation struct{
 	Allocations map[string]int
 	SlotCount int
@@ -35,7 +31,7 @@ func (self NodeSortItemSlice) Less(i,j int)bool{
 	return self[j].SlotCount < self[i].SlotCount
 }
 
-func InitSlotAlloction(nodeId int)*SlotAllocation{
+func InitSlotAlloction(slotCount,nodeId int)*SlotAllocation{
 	allocMap := make(map[string]int)
 	for i:=0;i<slotCount;i++{
 		allocMap[strconv.Itoa(i)] = nodeId
@@ -60,7 +56,7 @@ func InitSlotAlloctionWithData(data string)(*SlotAllocation,error){
  */
 func (self *SlotAllocation) AddNode(nodeId int)error{
 	oldNodeCount := len(self.NodeList)
-	newEachNodeSlotCount := slotCount/(oldNodeCount+1)
+	newEachNodeSlotCount := self.SlotCount/(oldNodeCount+1)
 	if newEachNodeSlotCount<=0 {
 		return &NodeError{"Have no more slot to allocate."}
 	}
