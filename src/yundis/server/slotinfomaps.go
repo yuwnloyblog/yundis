@@ -1,68 +1,71 @@
 package server
 
-import(
-	"sync"
+import (
 	"strconv"
-	"github.com/samuel/go-zookeeper/zk"
+	"sync"
+	"yundis/utils"
+
 	log "github.com/cihub/seelog"
-	"github.com/yuwnloyblog/yundis/utils"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
-type SlotInfoMaps struct{
+type SlotInfoMaps struct {
 	slotInfoMap map[string]*SlotInfo
-	locker *sync.RWMutex
-	zk *utils.ZkHelper
+	locker      *sync.RWMutex
+	zk          *utils.ZkHelper
 }
+
 /**
  * initial the slotinfo maps
  */
-func (self *SlotInfoMaps)Initial(zkHelper *utils.ZkHelper){
+func (self *SlotInfoMaps) Initial(zkHelper *utils.ZkHelper) {
 	self.slotInfoMap = make(map[string]*SlotInfo)
 	self.locker = new(sync.RWMutex)
 	self.zk = zkHelper
 }
 
-func (self *SlotInfoMaps)GetSlotInfoMap()map[string]*SlotInfo{
+func (self *SlotInfoMaps) GetSlotInfoMap() map[string]*SlotInfo {
 	self.locker.RLock()
 	defer self.locker.RUnlock()
 	return self.slotInfoMap
 }
 
-func (self *SlotInfoMaps)SetSlotInfoMap(infoMap map[string]*SlotInfo){
+func (self *SlotInfoMaps) SetSlotInfoMap(infoMap map[string]*SlotInfo) {
 	self.locker.Lock()
 	defer self.locker.Unlock()
 	self.slotInfoMap = infoMap
 }
+
 /**
- * load the slot's info to map. 
+ * load the slot's info to map.
  */
-func (self *SlotInfoMaps)LoadSlotInfoMap(slotCount int){
+func (self *SlotInfoMaps) LoadSlotInfoMap(slotCount int) {
 	log.Info("Read the slot's info from zk.")
-	if !self.zk.PathExist("/yundis/ids"){
-		_,err:=self.zk.Create("/yundis/ids",[]byte{},0,zk.WorldACL(zk.PermAll))
+	if !self.zk.PathExist("/yundis/ids") {
+		_, err := self.zk.Create("/yundis/ids", []byte{}, 0, zk.WorldACL(zk.PermAll))
 		log.Errorf("can not create path %s, err: %s", "/yundis/ids", err)
 	}
 	infoMap := make(map[string]*SlotInfo)
-	for i:=0;i<slotCount;i++{
+	for i := 0; i < slotCount; i++ {
 		strI := strconv.Itoa(i)
-		bytes,_,err:=self.zk.Get("/yundis/ids/"+strI)
-		if err!=nil || len(bytes)==0 {
-			slotInfo := &SlotInfo{strI,"Normal"}
+		bytes, _, err := self.zk.Get("/yundis/ids/" + strI)
+		if err != nil || len(bytes) == 0 {
+			slotInfo := &SlotInfo{strI, "Normal"}
 			infoMap[strI] = slotInfo
-			dataStr,err := utils.ToJson(slotInfo)
+			dataStr, err := utils.ToJson(slotInfo)
 			if err != nil {
 				log.Errorf("Can not convert %s to json. err:%s", slotInfo, err)
 				continue
 			}
-			self.zk.Create("/yundis/ids/"+strI,[]byte(dataStr),0,zk.WorldACL(zk.PermAll))
-		}else{
+			self.zk.Create("/yundis/ids/"+strI, []byte(dataStr), 0, zk.WorldACL(zk.PermAll))
+		} else {
 			log.Infof("Read the data form path %s", "/yundis/ids/"+strI)
 			var slotInfo SlotInfo
-			err = utils.JsonParse(string(bytes),&slotInfo)
+			err = utils.JsonParse(string(bytes), &slotInfo)
 			if err != nil {
 				log.Errorf("Can not parse data from node %s, err: %s", "/yundis/ids/"+strI, err)
 				continue
-			}else{
+			} else {
 				infoMap[strI] = &slotInfo
 			}
 		}
