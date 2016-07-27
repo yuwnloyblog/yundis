@@ -1,14 +1,16 @@
 package logs
 
-import(
+import (
 	"fmt"
+
 	log "github.com/cihub/seelog"
 )
+
 //var Logger log.LoggerInterface
 func init() {
-	mylogger,err := log.LoggerFromConfigAsFile("log.xml")
+	mylogger, err := log.LoggerFromConfigAsFile("../config/log.xml")
 	if err != nil {
-		fmt.Println("load log.xml fail:",err)
+		fmt.Println("load log.xml fail:", err)
 	}
-	log.ReplaceLogger(mylogger) 
+	log.ReplaceLogger(mylogger)
 }

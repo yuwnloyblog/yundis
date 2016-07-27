@@ -2,10 +2,10 @@
     <outputs formatid="main">
         <console/>
 
-        <rollingfile  type="size" filename="./log/server.log" maxsize="53687092" maxrolls="5" />
+        <rollingfile  type="size" filename="../log/server.log" maxsize="53687092" maxrolls="5" />
 
         <filter levels="error">
-            <file path="./log/error.log"/>
+            <file path="../log/error.log"/>
         </filter>
 
     </outputs>
