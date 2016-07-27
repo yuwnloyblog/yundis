@@ -18,7 +18,7 @@ func InitLogger(props utils.Properties) {
 		asyncInterval := props.GetIntWithDefault("log.asyncinterval", 5000000)
 		typeStr = `type="asynctimer" asyncinterval="` + strconv.Itoa(asyncInterval) + `"`
 	}
-	minLevel := props.GetStringWithDefault("log.minLevel", "info")
+	minLevel := props.GetStringWithDefault("log.minlevel", "info")
 	maxlevel := props.GetStringWithDefault("log.maxlevel", "error")
 	logDir := props.GetStringWithDefault("log.dirs", "./log")
 	segmentBytes := props.GetIntWithDefault("log.segment.bytes", 53687092)
@@ -39,7 +39,7 @@ func InitLogger(props utils.Properties) {
 		</seelog>
 	`
 	mylogger, err := log.LoggerFromConfigAsString(logConfig)
-	fmt.Println(logConfig)
+	//fmt.Println(logConfig)
 	//mylogger, err := log.LoggerFromConfigAsFile("../config/log.xml")
 	if err != nil {
 		fmt.Println("load seelog config fail:", err)
