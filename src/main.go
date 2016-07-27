@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"strings"
-	_ "yundis/logs"
+	mylogutil "yundis/logs"
 	"yundis/server"
 
 	log "github.com/cihub/seelog"
@@ -10,13 +12,20 @@ import (
 )
 
 func main() {
-	log.Infof("Load the config file : %s.", "$project_dir/config/yundis.properties")
+	args := os.Args
+	if len(args) <= 1 {
+		fmt.Println("Please specify the yundis.properties file.")
+		return
+	}
+	configFile := args[1]
+	fmt.Printf("Load the config file : %s.\n", configFile)
 	props := utils.Properties{}
-	err := props.LoadPropertyFile("../config/yundis.properties")
+	err := props.LoadPropertyFile(configFile)
+	mylogutil.InitLogger(props)
 	if err != nil {
-		log.Errorf("Load yundis.properties error: %s", err)
+		log.Errorf("Load %s error: %s", configFile, err)
 	} else {
-		log.Info("Success to load the yundis.properties")
+		log.Info("Success to load the " + configFile)
 		serverId, err := props.GetInt("server.id")
 		if err != nil {
 			log.Errorf("Read the server.id error:%s", err)
