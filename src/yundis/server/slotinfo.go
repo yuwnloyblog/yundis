@@ -1,6 +1,12 @@
 package server
 
-type SlotInfo struct{
+const (
+	SlotStateNormal = "Normal"
+	SlotStateDead   = "Dead"
+)
+
+//SlotInfo   the info of each slot
+type SlotInfo struct {
 	SlotId string
-	Status string
+	State  string
 }

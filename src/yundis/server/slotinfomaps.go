@@ -50,7 +50,7 @@ func (self *SlotInfoMaps) LoadSlotInfoMap(slotCount int) {
 		strI := strconv.Itoa(i)
 		bytes, _, err := self.zk.Get("/yundis/ids/" + strI)
 		if err != nil || len(bytes) == 0 {
-			slotInfo := &SlotInfo{strI, "Normal"}
+			slotInfo := &SlotInfo{strI, SlotStateNormal}
 			infoMap[strI] = slotInfo
 			dataStr, err := utils.ToJson(slotInfo)
 			if err != nil {
