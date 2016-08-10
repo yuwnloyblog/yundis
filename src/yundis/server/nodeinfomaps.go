@@ -86,7 +86,7 @@ func (self *NodeInfoMaps) getNodeInfoFromZk(zkConn *zk.Conn, path string) (*Node
 func (self *NodeInfoMaps) WatchNodeInfoMap(zkConn *zk.Conn) {
 	_, _, ch, err := zkConn.ChildrenW("/yundis/nodes")
 	if err != nil {
-		log.Errorf("Can not watch path /yundis/nodes, err:", err)
+		log.Errorf("Can not watch path /yundis/nodes, err:%s", err)
 	}
 	go func() {
 		for {

@@ -21,10 +21,10 @@ func main() {
 	fmt.Printf("Load the config file : %s.\n", configFile)
 	props := utils.Properties{}
 	err := props.LoadPropertyFile(configFile)
-	mylogutil.InitLogger(props)
 	if err != nil {
 		log.Errorf("Load %s error: %s", configFile, err)
 	} else {
+		mylogutil.InitLogger(props)
 		log.Info("Success to load the " + configFile)
 		serverId, err := props.GetInt("server.id")
 		if err != nil {
