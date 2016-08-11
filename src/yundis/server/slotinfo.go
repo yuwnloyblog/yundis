@@ -1,11 +1,11 @@
 package server
 
 const (
-	SlotStateNormal  = "Normal"
-	SlotStateDead    = "Dead"
-	SlotBeginMigrate = "BeginMigrate"
-	SlotMigrating    = "Migrating"
-	SlotEndMigrate   = "EndMigrate"
+	SlotStateNormal       = "Normal"
+	SlotStateDead         = "Dead"
+	SlotStateBeginMigrate = "BeginMigrate"
+	SlotStateMigrating    = "Migrating"
+	SlotStateEndMigrate   = "EndMigrate"
 )
 
 //SlotInfo   the info of each slot

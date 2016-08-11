@@ -4,6 +4,9 @@ import (
 	"sort"
 	"strconv"
 	"yundis/utils"
+
+	log "github.com/cihub/seelog"
+	"github.com/samuel/go-zookeeper/zk"
 )
 
 type SlotAllocation struct {
@@ -50,6 +53,49 @@ func InitSlotAlloctionWithData(data string) (*SlotAllocation, error) {
 		return nil, err
 	}
 	return &slots, nil
+}
+
+/**
+ * When allocation changed, modify the state of slot and update slotmaps.
+ */
+func HandleAllocationChange(oldAllocations, newAllocations *SlotAllocation, slotinfoMaps *SlotInfoMaps, zkHelper *utils.ZkHelper) {
+	isChanged := false
+	newSlotInfoMap := make(map[string]*SlotInfo) //create a new slotinfo maps
+	for i := 0; i < oldAllocations.SlotCount; i++ {
+		oldNodeId := oldAllocations.Allocations[strconv.Itoa(i)]
+		newNodeId := newAllocations.Allocations[strconv.Itoa(i)]
+		newSlotInfoMap[strconv.Itoa(i)] = &SlotInfo{
+			SlotId:       strconv.Itoa(i),
+			State:        slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].State,
+			NodeId:       slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].NodeId,
+			SrcNodeId:    slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].SrcNodeId,
+			TargetNodeId: slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].TargetNodeId,
+		}
+		if oldNodeId != newNodeId {
+			isChanged = true
+			log.Infof("The slot %d's node changed to %d from %d.", i, newNodeId, oldNodeId)
+			newSlotInfoMap[strconv.Itoa(i)].State = SlotStateMigrating
+			newSlotInfoMap[strconv.Itoa(i)].NodeId = strconv.Itoa(newNodeId)
+			newSlotInfoMap[strconv.Itoa(i)].SrcNodeId = strconv.Itoa(oldNodeId)
+			newSlotInfoMap[strconv.Itoa(i)].TargetNodeId = strconv.Itoa(newNodeId)
+			//update the new slotinfo to zk
+			jsonStr, err := utils.ToJson(newSlotInfoMap[strconv.Itoa(i)])
+			if err != nil {
+				log.Errorf("Can not convert to json string from obj [%s]", newSlotInfoMap[strconv.Itoa(i)])
+			} else {
+				_, err = zkHelper.CoverCreate("/yundis/ids/"+strconv.Itoa(i), []byte(jsonStr), 0, zk.WorldACL(zk.PermAll))
+				if err != nil {
+					log.Errorf("Change the value of /yundis/ids/%d fail, err:%s.", i, err)
+				}
+				//zkHelper.Set("/yundis/ids/"+strconv.Itoa(i), []byte(jsonStr), 1)
+			}
+		}
+	}
+	if isChanged {
+		log.Info("Update the slotinfoMaps.")
+		//slotinfoMaps.SetSlotInfoMap(infoMap)
+		slotinfoMaps.SetSlotInfoMap(newSlotInfoMap)
+	}
 }
 
 /**
@@ -161,7 +207,7 @@ func (self *SlotAllocation) getNodeMap() map[int][]int {
 	nodeMap := make(map[int][]int)
 	for k, v := range self.Allocations {
 		i, err := strconv.Atoi(k)
-		if err != nil {
+		if err == nil {
 			nodeMap[v] = append(nodeMap[v], i)
 		}
 	}

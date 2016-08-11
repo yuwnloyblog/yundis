@@ -44,6 +44,13 @@ func (self *ZkHelper) Get(path string) ([]byte, *zk.Stat, error) {
 }
 
 /**
+ * set the value of path
+ */
+func (self *ZkHelper) Set(path string, data []byte, version int32) (*zk.Stat, error) {
+	return self.GetZkConn().Set(path, data, version)
+}
+
+/**
  * judge the path whether exist.
  */
 func (self *ZkHelper) PathExist(path string) bool {
@@ -81,11 +88,18 @@ func (self *ZkHelper) GetZkConn() *zk.Conn {
 	if self.zkConn == nil {
 		c, _, err := zk.Connect(self.address, 10*time.Second)
 		if err != nil {
-			log.Errorf("connect zk error:", err)
+			log.Errorf("connect zk error:%s", err)
 		} else {
 			log.Info("Success to connect zk.")
 			self.zkConn = c
 		}
 	}
 	return self.zkConn
+}
+
+/**
+ * get a lock
+ */
+func (self *ZkHelper) GetLocker(path string) *zk.Lock {
+	return zk.NewLock(self.GetZkConn(), path, zk.WorldACL(zk.PermAll))
 }
