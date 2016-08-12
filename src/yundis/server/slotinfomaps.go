@@ -39,8 +39,17 @@ func (self *SlotInfoMaps) SetSlotInfoMap(infoMap map[string]*SlotInfo) {
 	self.slotInfoMap = infoMap
 }
 
+func (self *SlotInfoMaps) CloneSlotInfoMap() map[string]*SlotInfo {
+	infoMap := make(map[string]*SlotInfo)
+	slotInfoMap := self.GetSlotInfoMap()
+	for _, slotInfo := range slotInfoMap {
+		infoMap[slotInfo.SlotId] = slotInfo.Clone()
+	}
+	return infoMap
+}
+
 func (self *SlotInfoMaps) LoadSlotInfoMap() {
-	infoMap := self.getSlotInfoMapFromZk()
+	infoMap := self.GetSlotInfoMapFromZk()
 	self.SetSlotInfoMap(infoMap)
 	self.WatchSlotInfoMap()
 }
@@ -48,7 +57,7 @@ func (self *SlotInfoMaps) LoadSlotInfoMap() {
 /**
  * load the slot's info to map.
  */
-func (self *SlotInfoMaps) getSlotInfoMapFromZk() map[string]*SlotInfo {
+func (self *SlotInfoMaps) GetSlotInfoMapFromZk() map[string]*SlotInfo {
 	log.Info("Read the slot's info from zk.")
 	if !self.zk.PathExist("/yundis/ids") {
 		_, err := self.zk.Create("/yundis/ids", []byte{}, 0, zk.WorldACL(zk.PermAll))
@@ -97,13 +106,13 @@ func (self *SlotInfoMaps) WatchSlotInfoMap() {
 	go func() {
 		for {
 			event := <-ch
-			log.Infof("node list event, %+v", event)
+			log.Infof("Slotinfo list changed event, %+v", event)
 			data, _, ch1, err1 := self.zk.GetZkConn().GetW("/yundis/ids")
 			if err1 == nil {
 				ch = ch1
 				//handle the node list change event
-				log.Infof("node list changed : %s", data)
-				infoMap := self.getSlotInfoMapFromZk()
+				log.Infof("Slotinfo list changed : %s", data)
+				infoMap := self.GetSlotInfoMapFromZk()
 				//change the slotinfo state.
 				self.SetSlotInfoMap(infoMap) //refresh nodeinfo map by new zk data.
 				log.Info("Refresh slotinfo map by new zk data.")

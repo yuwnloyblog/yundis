@@ -46,7 +46,11 @@ func (self *ZkHelper) Get(path string) ([]byte, *zk.Stat, error) {
 /**
  * set the value of path
  */
-func (self *ZkHelper) Set(path string, data []byte, version int32) (*zk.Stat, error) {
+func (self *ZkHelper) Set(path string, data []byte) (*zk.Stat, error) {
+	return self.SetByVersion(path, data, -1)
+}
+
+func (self *ZkHelper) SetByVersion(path string, data []byte, version int32) (*zk.Stat, error) {
 	return self.GetZkConn().Set(path, data, version)
 }
 

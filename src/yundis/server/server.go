@@ -49,6 +49,8 @@ func (self *YundisServer) Start() {
 	self.nodeinfoMaps = &NodeInfoMaps{}
 	self.nodeinfoMaps.Initial(self.zkHelper, self.slotinfoMaps, self.allocations)
 	self.nodeinfoMaps.LoadNodeInfoMap()
+	//refresh the slotinfo map's state.
+	self.nodeinfoMaps.ModifySlotState(self.nodeinfoMaps.GetNodeInfoMap())
 	// start the agent to wait client connect.
 	self.StartAgent()
 	//log.Info("Start the yundis server ["+self.Name+"]")

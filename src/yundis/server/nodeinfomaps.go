@@ -1,13 +1,13 @@
 package server
 
 import (
+	"sort"
 	"strconv"
 	"sync"
 	"time"
 	"yundis/utils"
 
 	log "github.com/cihub/seelog"
-	"github.com/samuel/go-zookeeper/zk"
 )
 
 type NodeInfoMaps struct {
@@ -87,65 +87,94 @@ func (self *NodeInfoMaps) getNodeInfoFromZk(path string) (*NodeInfo, error) {
 }
 
 /**
- * 1. find the increased node id
+ * 1. for each the slotinfo list
  */
 func (self *NodeInfoMaps) ModifySlotState(newInfoMap map[string]*NodeInfo) {
-	//nodeSlotsMap := self.allocations.getNodeMap()
-	var disappearNodes []int
-	for nodeId, _ := range self.nodeInfoMap {
-		log.Debugf("nodeId : %s", nodeId)
-		if _, ok := newInfoMap[nodeId]; !ok { // this node was gone
-			log.Debugf("gone nodeId:%s", nodeId)
-			intNodeId, err := strconv.Atoi(nodeId)
-			if err != nil {
-				log.Errorf("Conver nodeid to int from string fail. err:%s", err)
-			} else {
-				disappearNodes = append(disappearNodes, intNodeId)
+	log.Info("Call modify slotinfo state.")
+	// get the slotinfo map
+	slotInfoMap := self.slotInfoMaps.CloneSlotInfoMap()
+	var changedSlots []*SlotInfo
+	for slotId, slotInfo := range slotInfoMap {
+		log.Debugf("Orginal SlotInfo [SlotId:%s, State:%s, NodeId:%s, SrcNodeId:%s, TargetNodeId:%s]", slotInfo.SlotId, slotInfo.State, slotInfo.NodeId, slotInfo.SrcNodeId, slotInfo.TargetNodeId)
+		isChanged := false
+		if _, ok := newInfoMap[slotInfo.NodeId]; ok { //the node alive
+			if slotInfo.State == SlotStateDead { //active this slot
+				slotInfo.State = SlotStateNormal
+				isChanged = true
+				log.Infof("Active slot:%s", slotId)
+			}
+		} else { // the node dead
+			if slotInfo.State == SlotStateNormal { //inactive this slot
+				slotInfo.State = SlotStateDead
+				isChanged = true
+				log.Infof("Inactive slot:%s", slotId)
 			}
 		}
+		if isChanged {
+			changedSlots = append(changedSlots, slotInfo)
+			log.Debugf("SlotInfo after changed [SlotId:%s, State:%s, NodeId:%s, SrcNodeId:%s, TargetNodeId:%s]", slotInfo.SlotId, slotInfo.State, slotInfo.NodeId, slotInfo.SrcNodeId, slotInfo.TargetNodeId)
+		}
 	}
-	if len(disappearNodes) > 0 { //need to change the slot's state
-		nodeSlotsMap := self.allocations.getNodeMap()
-		log.Debugf("nodeSlotsMap: %+v", nodeSlotsMap)
-		//lock the zk node
-		lock := self.zk.GetLocker("/yundis/idslocker")
-		err := lock.Lock()
+	//change current slotInfoMap
+	self.slotInfoMaps.SetSlotInfoMap(slotInfoMap)
+
+	if len(changedSlots) > 0 { //wether need to sync the value to zk.
+		log.Info("Update the zk by new slotinfo map.")
+		//get the zk locker
+		zkLocker := self.zk.GetLocker("/yundis/idslocker")
+		err := zkLocker.Lock()
 		if err != nil {
-			log.Errorf("Fail to lock the path /yundis/idslocker. err:%s", err)
+			log.Warnf("Can not lock the idslocker, err:%s", err)
 		} else {
-			var affectedSlots []int
-			for _, nodeId := range disappearNodes {
-				log.Debugf("list disapper nodes:%d", nodeId)
-				slots := nodeSlotsMap[nodeId]
-				log.Debugf("The slots list of node:%d", slots)
-				for _, slotId := range slots {
-					//update the slot info to zk
-					affectedSlots = append(affectedSlots, slotId)
-					slotInfo := self.slotInfoMaps.GetSlotInfoMap()[strconv.Itoa(slotId)]
-					slotInfo.State = SlotStateDead
-					jsonStr, err := utils.ToJson(slotInfo)
-					if err == nil {
-						self.zk.CoverCreate("/yundis/ids/"+strconv.Itoa(slotId), []byte(jsonStr), 0, zk.WorldACL(zk.PermAll))
-					} else {
-						log.Errorf("Error when conver %s to jsonstr.", slotInfo)
-					}
+			log.Info("Get the latest slotinfo map from zk before update them.")
+			latestSlotMap := self.slotInfoMaps.GetSlotInfoMapFromZk()
+			//update the slot to zk
+			var changedSlotIds []int
+			for _, slotInfo := range changedSlots {
+				if slotInfo.State == latestSlotMap[slotInfo.SlotId].State {
+					continue
 				}
-			}
-			if len(affectedSlots) > 0 {
-				//update /yundis/ids
-				json, err := utils.ToJson(affectedSlots)
+				log.Infof("Begin to update the slotinfo[%s] to zk.", slotInfo.SlotId)
+				//record the id
+				slotId, err := strconv.Atoi(slotInfo.SlotId)
 				if err == nil {
-					_, err = self.zk.Set("/yundis/ids", []byte(json), 1)
+					changedSlotIds = append(changedSlotIds, slotId)
+				} else {
+					log.Errorf("Convert slotId to int from string. err:%s", err)
+				}
+				//update the slot value
+				slotJsonStr, err := utils.ToJson(slotInfo)
+				if err == nil {
+					_, err = self.zk.Set("/yundis/ids/"+slotInfo.SlotId, []byte(slotJsonStr))
 					if err != nil {
-						log.Errorf("Can not set the value of /yundis/ids. err:%s", err)
+						log.Errorf("Can not set the value of /yundis/ids/"+slotInfo.SlotId+" to zk. err : %s", err)
 					}
 				} else {
-					log.Errorf("Error when conver %s to jsonstr.", err)
+					log.Errorf("Can not convert %+v to jsonstr. err : %s", slotInfo, err)
+				}
+			}
+			//update the value of /yundis/ids
+			if len(changedSlotIds) > 0 {
+				sort.Ints(changedSlotIds) //sort the array.
+				log.Infof("update the %s to /yundis/ids.", changedSlotIds)
+				idsJsonStr, err := utils.ToJson(changedSlotIds)
+				if err == nil {
+					_, err = self.zk.Set("/yundis/ids", []byte(idsJsonStr))
+					if err != nil {
+						log.Errorf("Can not set the value of /yundis/ids. err : %s", err)
+					}
+				} else {
+					log.Errorf("Can not convert %+v to jsonstr. err:%s", changedSlotIds, err)
 				}
 			}
 			//Unlock
-			lock.Unlock()
+			err := zkLocker.Unlock()
+			if err != nil {
+				log.Errorf("Unlock the idslocker error. err:%s", err)
+			}
 		}
+	} else {
+		log.Info("Do not need to refresh slotinfo to zk.")
 	}
 }
 
@@ -169,8 +198,8 @@ func (self *NodeInfoMaps) WatchNodeInfoMap() {
 				infoMap := self.getNodeInfoMapFromZk()
 				//change the slotinfo state.
 				log.Info("The node list changed, begin to change the affected slot's info.")
-				self.ModifySlotState(infoMap)
 				self.SetNodeInfoMap(infoMap) //refresh nodeinfo map by new zk data.
+				self.ModifySlotState(infoMap)
 				log.Info("Refresh nodeinfo map by new zk data.")
 			} else {
 				log.Errorf("Can not watching the children of /yundis/nodes, err:%s", err1)

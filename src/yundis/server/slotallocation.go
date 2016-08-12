@@ -64,17 +64,11 @@ func HandleAllocationChange(oldAllocations, newAllocations *SlotAllocation, slot
 	for i := 0; i < oldAllocations.SlotCount; i++ {
 		oldNodeId := oldAllocations.Allocations[strconv.Itoa(i)]
 		newNodeId := newAllocations.Allocations[strconv.Itoa(i)]
-		newSlotInfoMap[strconv.Itoa(i)] = &SlotInfo{
-			SlotId:       strconv.Itoa(i),
-			State:        slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].State,
-			NodeId:       slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].NodeId,
-			SrcNodeId:    slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].SrcNodeId,
-			TargetNodeId: slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].TargetNodeId,
-		}
+		newSlotInfoMap[strconv.Itoa(i)] = slotinfoMaps.GetSlotInfoMap()[strconv.Itoa(i)].Clone()
 		if oldNodeId != newNodeId {
 			isChanged = true
 			log.Infof("The slot %d's node changed to %d from %d.", i, newNodeId, oldNodeId)
-			newSlotInfoMap[strconv.Itoa(i)].State = SlotStateMigrating
+			newSlotInfoMap[strconv.Itoa(i)].MigrateState = MigStateMigrating
 			newSlotInfoMap[strconv.Itoa(i)].NodeId = strconv.Itoa(newNodeId)
 			newSlotInfoMap[strconv.Itoa(i)].SrcNodeId = strconv.Itoa(oldNodeId)
 			newSlotInfoMap[strconv.Itoa(i)].TargetNodeId = strconv.Itoa(newNodeId)
