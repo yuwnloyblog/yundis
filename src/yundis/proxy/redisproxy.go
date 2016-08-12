@@ -1,27 +1,28 @@
 package proxy
 
-import(
-	"net"
-	"fmt"
+import (
 	"bufio"
-	"strings"
+	"fmt"
+	"net"
 	"strconv"
+	"strings"
 )
 
-type RedisProxy struct{
+type RedisProxy struct {
 	TargetHost string
 	TargetPort int
-	redisConn net.Conn
-	redisBw *bufio.Writer
-	redisBr *bufio.Reader 
+	redisConn  net.Conn
+	redisBw    *bufio.Writer
+	redisBr    *bufio.Reader
 }
+
 /*
 func (self *RedisProxy)Start()error{
-	listen,err := net.ListenTCP("tcp", &net.TCPAddr{net.ParseIP(self.Host), self.Port, ""})  
+	listen,err := net.ListenTCP("tcp", &net.TCPAddr{net.ParseIP(self.Host), self.Port, ""})
     if err != nil {
-        fmt.Println("Error when listen the port:", err.Error())  
+        fmt.Println("Error when listen the port:", err.Error())
         return  err
-    }  
+    }
     fmt.Println("Inited the connection, waitting for client...")
     self.process(listen)
 	return nil;
@@ -64,13 +65,13 @@ func (self *RedisProxy)process(listen *net.TCPListener){
 /**
  * send data to redis
  */
-func (self *RedisProxy)SendToRedis(data []byte, conn net.Conn){
-	if self.redisConn == nil{
-		rc,err := net.Dial("tcp",strings.Join([]string{self.TargetHost,strconv.Itoa(self.TargetPort)},":"))
-		if err != nil{
+func (self *RedisProxy) SendToRedis(data []byte, conn net.Conn) {
+	if self.redisConn == nil {
+		rc, err := net.Dial("tcp", strings.Join([]string{self.TargetHost, strconv.Itoa(self.TargetPort)}, ":"))
+		if err != nil {
 			fmt.Println("connect redis error:", err.Error())
 			return
-		}else{
+		} else {
 			bw := bufio.NewWriter(rc)
 			br := bufio.NewReader(rc)
 			self.redisConn = rc
@@ -81,22 +82,22 @@ func (self *RedisProxy)SendToRedis(data []byte, conn net.Conn){
 	//write the data to redis
 	clientBw := bufio.NewWriter(conn)
 	self.redisBw.Write(data)
-	if err:=self.redisBw.Flush();err==nil{
+	if err := self.redisBw.Flush(); err == nil {
 		//write the result from redis to client.
-		for{
-			buf := make([]byte,8192)
-			count,err := self.redisBr.Read(buf)
-			if err != nil{
-				fmt.Println("Error when read data:",err.Error())
+		for {
+			buf := make([]byte, 8192)
+			count, err := self.redisBr.Read(buf)
+			if err != nil {
+				fmt.Println("Error when read data:", err.Error())
 				break
 			}
 			clientBw.Write(buf[:count])
-			if count<8192{
+			if count < 8192 {
 				break
 			}
 		}
-	}else{
-		clientBw.WriteString("-ERR target redis connection error.")
+	} else {
+		clientBw.WriteString("-ERR target redis connection error.\r\n")
 	}
 	clientBw.Flush()
 }

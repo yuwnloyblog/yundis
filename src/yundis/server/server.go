@@ -4,7 +4,6 @@ import (
 	"net"
 	"strconv"
 	"sync"
-	"time"
 	"yundis/proxy"
 	"yundis/utils"
 
@@ -30,27 +29,38 @@ type YundisServer struct {
 	slotinfoMaps *SlotInfoMaps
 }
 
+var adminHandler *AdminCmdHandler
+
 func (self *YundisServer) Start() {
 	self.allocLocker = new(sync.RWMutex)
 	self.zkHelper = utils.NewZkHelper(self.ZkAddress)
+
 	log.Info("Begin to register itself to zookeeper.")
+
 	self.registerToZk()
-	err := self.handleSlotAllocations()
-	if err != nil {
-		log.Errorf("Error when handle allocations node. %s", err)
-	}
+
+	// init the slot allocation.
+	self.SetAllocations(InitSlotAllocation(self.zkHelper, self.SlotCount, self.Id))
+
 	// initial the hash ring
 	self.initialSlotHashRing()
+
 	// update the slot info map
 	self.slotinfoMaps = &SlotInfoMaps{}
 	self.slotinfoMaps.Initial(self.zkHelper, self.SlotCount)
 	self.slotinfoMaps.LoadSlotInfoMap()
+
 	//load the nodeInfo map
 	self.nodeinfoMaps = &NodeInfoMaps{}
 	self.nodeinfoMaps.Initial(self.zkHelper, self.slotinfoMaps, self.allocations)
 	self.nodeinfoMaps.LoadNodeInfoMap()
+
 	//refresh the slotinfo map's state.
 	self.nodeinfoMaps.ModifySlotState(self.nodeinfoMaps.GetNodeInfoMap())
+
+	//init the admin cmd handler
+	adminHandler = NewAdminCmdHandler(self)
+
 	// start the agent to wait client connect.
 	self.StartAgent()
 	//log.Info("Start the yundis server ["+self.Name+"]")
@@ -97,88 +107,29 @@ func (self *YundisServer) StartAgent() {
 					break
 				}
 				log.Infof("cmd: %s", redisCmd)
-				//send to redis
-				hashNode := self.slotHashRing.Get(redisCmd.Key)
-				slotId := hashNode.Entry.(int)
-				log.Debugf("Target slot is %d", slotId)
-				if nodeId, ok := self.GetAllocations().Allocations[strconv.Itoa(slotId)]; ok {
-					log.Debugf("Target node is %d", nodeId)
-					if nodeInfo, ok := self.nodeinfoMaps.GetNodeInfoMap()[strconv.Itoa(nodeId)]; ok {
-						nodeInfo.GetRedisProxy().SendToRedis(data[0:i], conn)
-					} else {
-						log.Errorf("Can not find the nodeinfo by nodeId %d", nodeId)
-					}
+				if adminHandler.IsAdminCmd(redisCmd) {
+					//execute the admin cmd.
+					adminHandler.ExecuteCmd(redisCmd, conn)
 				} else {
-					log.Errorf("Can not get the nodeId by slotId %d", slotId)
-					break
+					//send to redis
+					hashNode := self.slotHashRing.Get(redisCmd.Key)
+					slotId := hashNode.Entry.(int)
+					log.Debugf("Target slot is %d", slotId)
+					if nodeId, ok := self.GetAllocations().Allocations[strconv.Itoa(slotId)]; ok {
+						log.Debugf("Target node is %d", nodeId)
+						if nodeInfo, ok := self.nodeinfoMaps.GetNodeInfoMap()[strconv.Itoa(nodeId)]; ok {
+							nodeInfo.GetRedisProxy().SendToRedis(data[0:i], conn)
+						} else {
+							log.Errorf("Can not find the nodeinfo by nodeId %d", nodeId)
+						}
+					} else {
+						log.Errorf("Can not get the nodeId by slotId %d", slotId)
+						break
+					}
 				}
 			}
 		}()
 	}
-}
-
-/**
- * read the control node
- * /yundis/allocations
- */
-
-func (self *YundisServer) handleSlotAllocations() error {
-	allocationsPath := "/yundis/allocations"
-	var err error
-	if b := self.zkHelper.PathExist(allocationsPath); b { //init from zk
-		bytes, _, err := self.zkHelper.GetZkConn().Get(allocationsPath)
-		if err != nil {
-			log.Error("Read the data of '/yundis/allocations' error.")
-			log.Error(err)
-			return err
-		}
-		allocations, err := InitSlotAlloctionWithData(string(bytes))
-		if err != nil {
-			log.Errorf("Parse the json data error. err:%s", err)
-			return err
-		}
-		self.SetAllocations(allocations)
-	} else { // init the cluster
-		slotAllocations := InitSlotAlloction(self.SlotCount, 0)
-		self.SetAllocations(slotAllocations)
-		bytes, err := slotAllocations.ToNodeData()
-		if err != nil {
-			return err
-		}
-		//create this path, and initial the data into zk
-		_, err = self.zkHelper.GetZkConn().Create(allocationsPath, bytes, 0, zk.WorldACL(zk.PermAll))
-	}
-	log.Info("Watching the change of /yundis/allocations.")
-	_, _, ch, err := self.zkHelper.GetZkConn().GetW("/yundis/allocations")
-	if err != nil {
-		log.Errorf("Can not watch path /yundis/allocations, err:%s", err)
-		return err
-	}
-	go func() {
-		for {
-			event := <-ch
-			log.Infof("The value of /yundis/allocations changed. %+v", event)
-			values, _, ch1, err1 := self.zkHelper.GetZkConn().GetW("/yundis/allocations")
-			if err1 == nil {
-				ch = ch1
-				log.Infof("The value of /yundis/allocations:%s", string(values))
-				//handle the new value of /yundis/allocations
-				newAllocations, err := InitSlotAlloctionWithData(string(values))
-				if err != nil {
-					log.Errorf("Can not init Allocation by data from zk. err: %s", err)
-				} else {
-					HandleAllocationChange(self.allocations, newAllocations, self.slotinfoMaps, self.zkHelper)
-					log.Info("Update the allocations.")
-					self.SetAllocations(newAllocations)
-				}
-			} else {
-				log.Errorf("Can not watching the value of /yundis/allocations, err:%s", err1)
-				break
-			}
-			time.Sleep(time.Second)
-		}
-	}()
-	return err
 }
 
 /**

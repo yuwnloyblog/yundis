@@ -34,7 +34,11 @@ func (self NodeSortItemSlice) Less(i, j int) bool {
 	return self[j].SlotCount < self[i].SlotCount
 }
 
-func InitSlotAlloction(slotCount, nodeId int) *SlotAllocation {
+func InitSlotAllocation(zkHelper *utils.ZkHelper, slotCount, nodeId int) *SlotAllocation {
+	return HandleSlotAllocations(zkHelper, slotCount, nodeId)
+}
+
+func CreateSlotAlloction(slotCount, nodeId int) *SlotAllocation {
 	allocMap := make(map[string]int)
 	for i := 0; i < slotCount; i++ {
 		allocMap[strconv.Itoa(i)] = nodeId
@@ -46,7 +50,7 @@ func InitSlotAlloction(slotCount, nodeId int) *SlotAllocation {
 	}
 }
 
-func InitSlotAlloctionWithData(data string) (*SlotAllocation, error) {
+func InitSlotAlloctionWithJson(data string) (*SlotAllocation, error) {
 	var slots SlotAllocation
 	err := utils.JsonParse(data, &slots)
 	if err != nil {
@@ -247,4 +251,91 @@ func (self *SlotAllocation) ToNodeData() ([]byte, error) {
 		return []byte{}, err
 	}
 	return []byte(str), nil
+}
+func SyncToZk(alloc *SlotAllocation, zkHelper *utils.ZkHelper) error {
+	allocationsPath := "/yundis/allocations"
+	bytes, err := alloc.ToNodeData()
+	if err == nil {
+		_, err = zkHelper.Set(allocationsPath, bytes)
+		return err
+	}
+	return err
+}
+
+/**
+ * init slot allocation from zk.
+ */
+func GetSlotAllocationsFromZk(zkHelper *utils.ZkHelper) *SlotAllocation {
+	allocationsPath := "/yundis/allocations"
+	if b := zkHelper.PathExist(allocationsPath); b {
+		bytes, _, err := zkHelper.GetZkConn().Get(allocationsPath)
+		if err != nil {
+			log.Errorf("Read the data of '/yundis/allocations' error. err : %s", err)
+		}
+		allocations, err := InitSlotAlloctionWithJson(string(bytes))
+		if err != nil {
+			log.Errorf("Parse the json data error. err:%s", err)
+		} else {
+			return allocations
+		}
+	}
+	return nil
+}
+
+/**
+ * read the control node
+ * /yundis/allocations
+ */
+
+func HandleSlotAllocations(zkHelper *utils.ZkHelper, slotCount int, nodeId int) *SlotAllocation {
+	allocationsPath := "/yundis/allocations"
+	allocations := GetSlotAllocationsFromZk(zkHelper)
+	if allocations != nil { //init from zk
+		log.Info("Init slot allocation from zk.")
+		//return allocations
+	} else { //init the cluster, and save to zk
+		allocations = CreateSlotAlloction(slotCount, nodeId)
+		//self.SetAllocations(slotAllocations)
+		bytes, err := allocations.ToNodeData()
+		if err != nil {
+			log.Errorf("Can convert slotallocation to json str. err : %s", err)
+		}
+		//create this path, and initial the data into zk
+		_, err = zkHelper.GetZkConn().Create(allocationsPath, bytes, 0, zk.WorldACL(zk.PermAll))
+		if err != nil {
+			log.Errorf("Can not write allocations to zk. err : %s", err)
+		}
+	}
+	return allocations
+	/*
+		log.Info("Watching the change of /yundis/allocations.")
+		_, _, ch, err := zkHelper.GetZkConn().GetW("/yundis/allocations")
+		if err != nil {
+			log.Errorf("Can not watch path /yundis/allocations, err:%s", err)
+			return err
+		}
+		go func() {
+			for {
+				event := <-ch
+				log.Infof("The value of /yundis/allocations changed. %+v", event)
+				values, _, ch1, err1 := zkHelper.GetZkConn().GetW("/yundis/allocations")
+				if err1 == nil {
+					ch = ch1
+					log.Infof("The value of /yundis/allocations:%s", string(values))
+					//handle the new value of /yundis/allocations
+					newAllocations, err := InitSlotAlloctionWithData(string(values))
+					if err != nil {
+						log.Errorf("Can not init Allocation by data from zk. err: %s", err)
+					} else {
+						HandleAllocationChange(self.allocations, newAllocations, self.slotinfoMaps, self.zkHelper)
+						log.Info("Update the allocations.")
+						self.SetAllocations(newAllocations)
+					}
+				} else {
+					log.Errorf("Can not watching the value of /yundis/allocations, err:%s", err1)
+					break
+				}
+				time.Sleep(time.Second)
+			}
+		}()*/
 }
