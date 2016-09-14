@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	REBLANCE = "reblance"
+	REBALANCE = "rebalance"
 )
 
 type AdminCmdHandler struct {
@@ -41,8 +41,12 @@ func (self *AdminCmdHandler) IsAdminCmd(cmd *proxy.RedisCmd) bool {
  */
 func (self *AdminCmdHandler) ExecuteCmd(cmd *proxy.RedisCmd, conn net.Conn) {
 	log.Info("Execute the admin cmd : ", cmd)
-
-	success := self.DoReblance()
+	success := false
+	if len(cmd.Args) > 0 {
+		if REBALANCE == cmd.Args[0] {
+			success = self.DoReblance()
+		}
+	}
 
 	clientBw := bufio.NewWriter(conn)
 	if success {
